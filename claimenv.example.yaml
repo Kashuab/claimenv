@@ -1,0 +1,14 @@
+backend:
+  lock:
+    type: firestore                    # "firestore" or "memory"
+    project: my-gcp-project            # GCP project ID (firestore only)
+    collection: claimenv-locks         # Firestore collection name (firestore only)
+  secrets:
+    type: gcp-secret-manager           # "gcp-secret-manager" or "memory"
+    project: my-gcp-project            # GCP project ID (gcp-secret-manager only)
+
+pools:
+  onboard:
+    slots: 4                           # Number of credential sets in the pool
+    ttl: 4h                            # How long a claim lasts before auto-expiry
+    secret_prefix: "onboard-slot-"     # Secrets are named: onboard-slot-0, onboard-slot-1, ...
