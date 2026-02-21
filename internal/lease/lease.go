@@ -11,7 +11,7 @@ type LeaseFile struct {
 	Pool       string    `json:"pool"`
 	SlotName   string    `json:"slot_name"`
 	LeaseID    string    `json:"lease_id"`
-	SecretName string    `json:"secret_name"`
+	Secrets    map[string]string `json:"secrets"`
 	Holder     string    `json:"holder"`
 	ClaimedAt  time.Time `json:"claimed_at"`
 	ExpiresAt  time.Time `json:"expires_at"`

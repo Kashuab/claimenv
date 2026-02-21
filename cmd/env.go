@@ -10,11 +10,12 @@ import (
 )
 
 var envFormat string
+var envNames bool
 
 var envCmd = &cobra.Command{
 	Use:   "env",
 	Short: "Dump all env vars from the claimed slot",
-	Long:  `Outputs all environment variables. Use eval $(claimenv env) to source them.`,
+	Long:  `Outputs all environment variables. Use eval $(claimenv env) to source them. Use --names to output GCP Secret Manager secret names instead of values.`,
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		lf, err := lease.Load(eng.LeaseFile)
@@ -22,9 +23,19 @@ var envCmd = &cobra.Command{
 			return err
 		}
 
-		all, err := eng.ReadAll(cmd.Context(), lf)
-		if err != nil {
-			return err
+		var all map[string]string
+
+		if envNames {
+			// Output secret names from the lease, no API calls needed
+			all = make(map[string]string, len(lf.Secrets))
+			for k, v := range lf.Secrets {
+				all[k] = v
+			}
+		} else {
+			all, err = eng.ReadAll(cmd.Context(), lf)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Sort keys for deterministic output
@@ -57,5 +68,6 @@ var envCmd = &cobra.Command{
 
 func init() {
 	envCmd.Flags().StringVar(&envFormat, "format", "export", "output format: export, dotenv, json")
+	envCmd.Flags().BoolVar(&envNames, "names", false, "output GCP Secret Manager secret names instead of values")
 	rootCmd.AddCommand(envCmd)
 }

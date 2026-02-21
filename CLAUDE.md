@@ -28,11 +28,11 @@ internal/
 
 Two pluggable backend interfaces:
 - **LockStore** (`internal/lockstore/lockstore.go`): manages exclusive leases on named pool slots
-- **SecretStore** (`internal/secretstore/secretstore.go`): reads/writes credential key-value pairs
+- **SecretStore** (`internal/secretstore/secretstore.go`): reads/writes individual secret values
 
 The **Engine** (`internal/engine/engine.go`) orchestrates both stores. CLI commands are thin wrappers that delegate to the engine.
 
-Slots are named (not numbered). Each slot maps to a GCP Secret Manager secret via config. The GCP SM backend auto-creates secrets on first write if they don't exist.
+Slots are named (not numbered). Env var keys are defined at the pool level. Each key gets its own GCP Secret Manager secret, with names derived by convention: `{slot-name}-{kebab-key}` (e.g. slot `app-alpha` + key `SHOPIFY_API_SECRET` → secret `app-alpha-shopify-api-secret`). The GCP SM backend auto-creates secrets on first write if they don't exist.
 
 ## Build & Test
 

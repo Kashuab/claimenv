@@ -9,14 +9,16 @@ You have a team working on a Shopify app with branch preview environments. Each 
 ## How It Works
 
 ```
-Pool "onboard"
-  app-alpha  { SHOPIFY_API_KEY=aaa, SHOPIFY_API_SECRET=bbb }  <- claimed by MR !423
-  app-beta   { SHOPIFY_API_KEY=ccc, SHOPIFY_API_SECRET=ddd }  <- free
-  app-gamma  { SHOPIFY_API_KEY=eee, SHOPIFY_API_SECRET=fff }  <- claimed by MR !518
-  app-delta  { ... }                                           <- free
+Pool "onboard" (keys: SHOPIFY_API_KEY, SHOPIFY_API_SECRET)
+  app-alpha  <- claimed by MR !423  (secrets: app-alpha-shopify-api-key, app-alpha-shopify-api-secret)
+  app-beta   <- free                (secrets: app-beta-shopify-api-key, app-beta-shopify-api-secret)
+  app-gamma  <- claimed by MR !518  (secrets: app-gamma-shopify-api-key, app-gamma-shopify-api-secret)
+  app-delta  <- free
 ```
 
-`claimenv` atomically claims a free slot, gives you access to its credentials, and releases it when you're done. Leases have a TTL so crashed/cancelled jobs don't hold slots forever.
+Each env var key gets its own GCP Secret Manager secret, with names derived by convention: `{slot-name}-{kebab-key}`. This means you can reference secrets by name in Cloud Run, Terraform, etc.
+
+`claimenv` atomically claims a free slot, gives you access to its credentials (values or secret names), and releases it when you're done. Leases have a TTL so crashed/cancelled jobs don't hold slots forever.
 
 ## Install
 
@@ -43,6 +45,13 @@ eval $(claimenv env)
 
 # Read a single value
 claimenv read SHOPIFY_API_KEY
+
+# Read the GCP Secret Manager secret name (for Terraform/Cloud Run)
+claimenv read SHOPIFY_API_KEY --format name
+# → "app-alpha-shopify-api-key"
+
+# Dump all secret names as JSON (useful for Terraform -var-file)
+claimenv env --names --format json
 
 # Write a value back (e.g. set the preview URL)
 claimenv write APP_URL https://mr-423.preview.example.com
@@ -74,18 +83,17 @@ backend:
 pools:
   onboard:
     ttl: 4h
+    keys:
+      - SHOPIFY_API_KEY
+      - SHOPIFY_API_SECRET
     slots:
       - name: app-alpha
-        secret: onboard-app-alpha
       - name: app-beta
-        secret: onboard-app-beta
       - name: app-gamma
-        secret: onboard-app-gamma
       - name: app-delta
-        secret: onboard-app-delta
 ```
 
-Each slot has a `name` (shown in status output and logs) and a `secret` (the GCP Secret Manager secret name holding that slot's credentials as a JSON object).
+Keys are defined at the pool level. Each slot has a `name` and secret names are derived automatically: `{slot-name}-{kebab-key}` (e.g. `app-alpha-shopify-api-key`).
 
 Config file lookup order:
 1. `CLAIMENV_CONFIG` env var
@@ -106,7 +114,7 @@ Config file lookup order:
 
 | Backend | Config `type` | Description |
 |---------|--------------|-------------|
-| GCP Secret Manager | `gcp-secret-manager` | Each slot is a secret with a JSON payload of key-value pairs. |
+| GCP Secret Manager | `gcp-secret-manager` | Each env var key gets its own secret per slot, holding a single string value. |
 | Memory | `memory` | Ephemeral, per-process. For development and testing only. |
 
 ## GCP Setup
@@ -122,11 +130,13 @@ Secrets are auto-created by `claimenv write` if they don't exist. You can also p
 
 ```bash
 # Pre-create secrets with initial credentials
-for name in app-alpha app-beta app-gamma app-delta; do
-  gcloud secrets create "onboard-${name}" --project=my-gcp-project
-
-  echo '{"SHOPIFY_API_KEY":"key-'${name}'","SHOPIFY_API_SECRET":"secret-'${name}'"}' | \
-    gcloud secrets versions add "onboard-${name}" --data-file=- --project=my-gcp-project
+for slot in app-alpha app-beta app-gamma app-delta; do
+  for key in shopify-api-key shopify-api-secret; do
+    secret_name="${slot}-${key}"
+    gcloud secrets create "${secret_name}" --project=my-gcp-project
+    echo -n "your-value-here" | \
+      gcloud secrets versions add "${secret_name}" --data-file=- --project=my-gcp-project
+  done
 done
 ```
 
@@ -140,8 +150,11 @@ deploy_preview:
   script:
     - claimenv claim onboard
     - eval $(claimenv env)
-    - claimenv write APP_URL "https://${CI_MERGE_REQUEST_IID}.preview.example.com"
-    - ./deploy.sh
+    # Pass secret names to Terraform for Cloud Run secret references
+    - |
+      terraform apply -auto-approve \
+        -var="shopify_api_key_secret=$(claimenv read SHOPIFY_API_KEY --format name)" \
+        -var="shopify_api_secret_secret=$(claimenv read SHOPIFY_API_SECRET --format name)"
   after_script:
     - claimenv release
   environment:

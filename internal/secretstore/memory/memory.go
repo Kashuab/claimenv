@@ -10,69 +10,37 @@ import (
 // Store is a thread-safe in-memory secret store for testing and local development.
 type Store struct {
 	mu      sync.Mutex
-	secrets map[string]map[string]string // key: secret name, value: key-value pairs
+	secrets map[string]string // secret name → value
 }
 
 func New() *Store {
 	return &Store{
-		secrets: make(map[string]map[string]string),
+		secrets: make(map[string]string),
 	}
 }
 
-// Seed pre-populates a secret with key-value pairs (useful for testing).
-func (s *Store) Seed(secretName string, data map[string]string) {
+// Seed pre-populates a secret with a value (useful for testing).
+func (s *Store) Seed(secretName string, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	s.secrets[secretName] = make(map[string]string, len(data))
-	for k, v := range data {
-		s.secrets[secretName][k] = v
-	}
+	s.secrets[secretName] = value
 }
 
-func (s *Store) ReadAll(_ context.Context, secretName string) (map[string]string, error) {
+func (s *Store) Read(_ context.Context, secretName string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, ok := s.secrets[secretName]
-	if !ok {
-		return nil, secretstore.ErrSecretNotFound
-	}
-
-	// Return a copy to prevent mutation
-	result := make(map[string]string, len(data))
-	for k, v := range data {
-		result[k] = v
-	}
-	return result, nil
-}
-
-func (s *Store) ReadKey(_ context.Context, secretName string, key string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	data, ok := s.secrets[secretName]
+	val, ok := s.secrets[secretName]
 	if !ok {
 		return "", secretstore.ErrSecretNotFound
 	}
-
-	val, ok := data[key]
-	if !ok {
-		return "", secretstore.ErrKeyNotFound
-	}
-
 	return val, nil
 }
 
-func (s *Store) WriteKey(_ context.Context, secretName string, key string, value string) error {
+func (s *Store) Write(_ context.Context, secretName string, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if _, ok := s.secrets[secretName]; !ok {
-		s.secrets[secretName] = make(map[string]string)
-	}
-
-	s.secrets[secretName][key] = value
+	s.secrets[secretName] = value
 	return nil
 }
 

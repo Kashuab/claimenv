@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -31,12 +32,12 @@ type SecretBackendConfig struct {
 
 type PoolConfig struct {
 	Slots []SlotConfig  `yaml:"slots" mapstructure:"slots"`
+	Keys  []string      `yaml:"keys"  mapstructure:"keys"`
 	TTL   time.Duration `yaml:"ttl"   mapstructure:"ttl"`
 }
 
 type SlotConfig struct {
-	Name   string `yaml:"name"   mapstructure:"name"`
-	Secret string `yaml:"secret" mapstructure:"secret"`
+	Name string `yaml:"name" mapstructure:"name"`
 }
 
 // SlotNames returns the ordered list of slot names in the pool.
@@ -48,14 +49,20 @@ func (p *PoolConfig) SlotNames() []string {
 	return names
 }
 
-// SecretForSlot returns the secret name for the given slot name.
-func (p *PoolConfig) SecretForSlot(slotName string) (string, bool) {
-	for _, s := range p.Slots {
-		if s.Name == slotName {
-			return s.Secret, true
-		}
+// SecretName derives the GCP Secret Manager secret name for a given slot and key.
+// Convention: {slot-name}-{kebab-case-key}, e.g. "app-alpha" + "SHOPIFY_API_SECRET" → "app-alpha-shopify-api-secret".
+func SecretName(slotName, key string) string {
+	kebab := strings.ToLower(strings.ReplaceAll(key, "_", "-"))
+	return slotName + "-" + kebab
+}
+
+// SecretsForSlot returns a map of env var key → derived secret name for the given slot.
+func (p *PoolConfig) SecretsForSlot(slotName string) map[string]string {
+	m := make(map[string]string, len(p.Keys))
+	for _, key := range p.Keys {
+		m[key] = SecretName(slotName, key)
 	}
-	return "", false
+	return m
 }
 
 func Load(v *viper.Viper) (*Config, error) {
@@ -91,6 +98,9 @@ func validate(cfg *Config) error {
 		if len(pool.Slots) == 0 {
 			return fmt.Errorf("pool %q: at least one slot is required", name)
 		}
+		if len(pool.Keys) == 0 {
+			return fmt.Errorf("pool %q: at least one key is required", name)
+		}
 		if pool.TTL <= 0 {
 			return fmt.Errorf("pool %q: ttl must be > 0", name)
 		}
@@ -98,9 +108,6 @@ func validate(cfg *Config) error {
 		for i, slot := range pool.Slots {
 			if slot.Name == "" {
 				return fmt.Errorf("pool %q: slot %d: name is required", name, i)
-			}
-			if slot.Secret == "" {
-				return fmt.Errorf("pool %q: slot %q: secret is required", name, slot.Name)
 			}
 			if seen[slot.Name] {
 				return fmt.Errorf("pool %q: duplicate slot name %q", name, slot.Name)

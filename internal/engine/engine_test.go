@@ -19,9 +19,10 @@ func testEngine() (*engine.Engine, *lockmem.Store, *secretmem.Store) {
 	cfg := &config.Config{
 		Pools: map[string]config.PoolConfig{
 			"testpool": {
+				Keys: []string{"SHOPIFY_API_KEY", "APP_URL"},
 				Slots: []config.SlotConfig{
-					{Name: "alpha", Secret: "test-alpha"},
-					{Name: "beta", Secret: "test-beta"},
+					{Name: "alpha"},
+					{Name: "beta"},
 				},
 				TTL: 1 * time.Hour,
 			},
@@ -54,8 +55,11 @@ func TestClaim(t *testing.T) {
 	if lf.SlotName != "alpha" {
 		t.Errorf("expected slot 'alpha', got %q", lf.SlotName)
 	}
-	if lf.SecretName != "test-alpha" {
-		t.Errorf("expected secret name 'test-alpha', got %q", lf.SecretName)
+	if lf.Secrets["SHOPIFY_API_KEY"] != "alpha-shopify-api-key" {
+		t.Errorf("expected secret name 'alpha-shopify-api-key', got %q", lf.Secrets["SHOPIFY_API_KEY"])
+	}
+	if lf.Secrets["APP_URL"] != "alpha-app-url" {
+		t.Errorf("expected secret name 'alpha-app-url', got %q", lf.Secrets["APP_URL"])
 	}
 	if lf.Holder != "test-holder" {
 		t.Errorf("expected holder 'test-holder', got %q", lf.Holder)
@@ -124,10 +128,8 @@ func TestReadWriteKey(t *testing.T) {
 	e, _, ss := testEngine()
 	ctx := context.Background()
 
-	// Seed the secret store
-	ss.Seed("test-alpha", map[string]string{
-		"SHOPIFY_API_KEY": "test-key-123",
-	})
+	// Seed the secret store with a value for the derived secret name
+	ss.Seed("alpha-shopify-api-key", "test-key-123")
 
 	lf, err := e.Claim(ctx, "testpool")
 	if err != nil {
@@ -143,7 +145,7 @@ func TestReadWriteKey(t *testing.T) {
 		t.Errorf("expected 'test-key-123', got %q", val)
 	}
 
-	// Write new key
+	// Write to a key
 	err = e.WriteKey(ctx, lf, "APP_URL", "https://preview.example.com")
 	if err != nil {
 		t.Fatalf("WriteKey failed: %v", err)
@@ -159,14 +161,35 @@ func TestReadWriteKey(t *testing.T) {
 	}
 }
 
+func TestReadWriteKeyUndefinedKey(t *testing.T) {
+	e, _, _ := testEngine()
+	ctx := context.Background()
+
+	lf, err := e.Claim(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("Claim failed: %v", err)
+	}
+
+	// Read undefined key should error
+	_, err = e.ReadKey(ctx, lf, "UNDEFINED_KEY")
+	if err == nil {
+		t.Error("expected error for undefined key")
+	}
+
+	// Write undefined key should error
+	err = e.WriteKey(ctx, lf, "UNDEFINED_KEY", "value")
+	if err == nil {
+		t.Error("expected error for undefined key")
+	}
+}
+
 func TestReadAll(t *testing.T) {
 	e, _, ss := testEngine()
 	ctx := context.Background()
 
-	ss.Seed("test-alpha", map[string]string{
-		"KEY_A": "val_a",
-		"KEY_B": "val_b",
-	})
+	// Seed both derived secret names
+	ss.Seed("alpha-shopify-api-key", "val_a")
+	ss.Seed("alpha-app-url", "val_b")
 
 	lf, err := e.Claim(ctx, "testpool")
 	if err != nil {
@@ -181,8 +204,34 @@ func TestReadAll(t *testing.T) {
 	if len(all) != 2 {
 		t.Errorf("expected 2 keys, got %d", len(all))
 	}
-	if all["KEY_A"] != "val_a" {
-		t.Errorf("expected KEY_A='val_a', got %q", all["KEY_A"])
+	if all["SHOPIFY_API_KEY"] != "val_a" {
+		t.Errorf("expected SHOPIFY_API_KEY='val_a', got %q", all["SHOPIFY_API_KEY"])
+	}
+	if all["APP_URL"] != "val_b" {
+		t.Errorf("expected APP_URL='val_b', got %q", all["APP_URL"])
+	}
+}
+
+func TestSecretName(t *testing.T) {
+	e, _, _ := testEngine()
+	ctx := context.Background()
+
+	lf, err := e.Claim(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("Claim failed: %v", err)
+	}
+
+	name, err := e.SecretName(lf, "SHOPIFY_API_KEY")
+	if err != nil {
+		t.Fatalf("SecretName failed: %v", err)
+	}
+	if name != "alpha-shopify-api-key" {
+		t.Errorf("expected 'alpha-shopify-api-key', got %q", name)
+	}
+
+	_, err = e.SecretName(lf, "NONEXISTENT")
+	if err == nil {
+		t.Error("expected error for nonexistent key")
 	}
 }
 
@@ -207,6 +256,11 @@ func TestRenew(t *testing.T) {
 
 	if !renewed.ExpiresAt.After(originalExpiry) {
 		t.Error("expected renewed expiry to be after original")
+	}
+
+	// Secrets map should be preserved
+	if renewed.Secrets["SHOPIFY_API_KEY"] != lf.Secrets["SHOPIFY_API_KEY"] {
+		t.Error("expected secrets map to be preserved after renew")
 	}
 }
 

@@ -10,12 +10,11 @@ backend:
 pools:
   onboard:
     ttl: 4h                            # How long a claim lasts before auto-expiry
-    slots:
-      - name: app-alpha                # Human-readable slot name
-        secret: onboard-app-alpha      # GCP Secret Manager secret name
+    keys:                              # Env var keys; each gets its own GCP SM secret
+      - SHOPIFY_API_SECRET
+      - MANTLE_API_KEY
+    slots:                             # Secret names are derived: {slot-name}-{kebab-key}
+      - name: app-alpha                # e.g. app-alpha-shopify-api-secret
       - name: app-beta
-        secret: onboard-app-beta
       - name: app-gamma
-        secret: onboard-app-gamma
       - name: app-delta
-        secret: onboard-app-delta
