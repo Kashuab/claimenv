@@ -30,9 +30,32 @@ type SecretBackendConfig struct {
 }
 
 type PoolConfig struct {
-	Slots        int           `yaml:"slots"         mapstructure:"slots"`
-	TTL          time.Duration `yaml:"ttl"           mapstructure:"ttl"`
-	SecretPrefix string        `yaml:"secret_prefix" mapstructure:"secret_prefix"`
+	Slots []SlotConfig  `yaml:"slots" mapstructure:"slots"`
+	TTL   time.Duration `yaml:"ttl"   mapstructure:"ttl"`
+}
+
+type SlotConfig struct {
+	Name   string `yaml:"name"   mapstructure:"name"`
+	Secret string `yaml:"secret" mapstructure:"secret"`
+}
+
+// SlotNames returns the ordered list of slot names in the pool.
+func (p *PoolConfig) SlotNames() []string {
+	names := make([]string, len(p.Slots))
+	for i, s := range p.Slots {
+		names[i] = s.Name
+	}
+	return names
+}
+
+// SecretForSlot returns the secret name for the given slot name.
+func (p *PoolConfig) SecretForSlot(slotName string) (string, bool) {
+	for _, s := range p.Slots {
+		if s.Name == slotName {
+			return s.Secret, true
+		}
+	}
+	return "", false
 }
 
 func Load(v *viper.Viper) (*Config, error) {
@@ -65,14 +88,24 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("at least one pool must be defined")
 	}
 	for name, pool := range cfg.Pools {
-		if pool.Slots <= 0 {
-			return fmt.Errorf("pool %q: slots must be > 0", name)
+		if len(pool.Slots) == 0 {
+			return fmt.Errorf("pool %q: at least one slot is required", name)
 		}
 		if pool.TTL <= 0 {
 			return fmt.Errorf("pool %q: ttl must be > 0", name)
 		}
-		if pool.SecretPrefix == "" {
-			return fmt.Errorf("pool %q: secret_prefix is required", name)
+		seen := make(map[string]bool)
+		for i, slot := range pool.Slots {
+			if slot.Name == "" {
+				return fmt.Errorf("pool %q: slot %d: name is required", name, i)
+			}
+			if slot.Secret == "" {
+				return fmt.Errorf("pool %q: slot %q: secret is required", name, slot.Name)
+			}
+			if seen[slot.Name] {
+				return fmt.Errorf("pool %q: duplicate slot name %q", name, slot.Name)
+			}
+			seen[slot.Name] = true
 		}
 	}
 	return nil

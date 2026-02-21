@@ -56,7 +56,7 @@ func printStatusTable(statuses []lockstore.SlotStatus) error {
 			expires = s.Claim.ExpiresAt.Format("2006-01-02 15:04:05")
 		}
 
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", s.SlotIndex, status, holder, expires)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.SlotName, status, holder, expires)
 	}
 
 	return w.Flush()

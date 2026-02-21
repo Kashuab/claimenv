@@ -9,6 +9,13 @@ backend:
 
 pools:
   onboard:
-    slots: 4                           # Number of credential sets in the pool
     ttl: 4h                            # How long a claim lasts before auto-expiry
-    secret_prefix: "onboard-slot-"     # Secrets are named: onboard-slot-0, onboard-slot-1, ...
+    slots:
+      - name: app-alpha                # Human-readable slot name
+        secret: onboard-app-alpha      # GCP Secret Manager secret name
+      - name: app-beta
+        secret: onboard-app-beta
+      - name: app-gamma
+        secret: onboard-app-gamma
+      - name: app-delta
+        secret: onboard-app-delta

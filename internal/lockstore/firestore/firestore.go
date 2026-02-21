@@ -21,7 +21,7 @@ type Store struct {
 // slotDoc is the Firestore document schema for a slot.
 type slotDoc struct {
 	Pool      string    `firestore:"pool"`
-	SlotIndex int       `firestore:"slot_index"`
+	SlotName  string    `firestore:"slot_name"`
 	LeaseID   string    `firestore:"lease_id"`
 	Holder    string    `firestore:"holder"`
 	ClaimedAt time.Time `firestore:"claimed_at"`
@@ -36,23 +36,22 @@ func New(ctx context.Context, project, collection string) (*Store, error) {
 	return &Store{client: client, collection: collection}, nil
 }
 
-func (s *Store) docID(pool string, index int) string {
-	return fmt.Sprintf("%s-slot-%d", pool, index)
+func (s *Store) docID(pool string, slotName string) string {
+	return fmt.Sprintf("%s-%s", pool, slotName)
 }
 
-func (s *Store) docRef(pool string, index int) *firestore.DocumentRef {
-	return s.client.Collection(s.collection).Doc(s.docID(pool, index))
+func (s *Store) docRef(pool string, slotName string) *firestore.DocumentRef {
+	return s.client.Collection(s.collection).Doc(s.docID(pool, slotName))
 }
 
-func (s *Store) Claim(ctx context.Context, pool string, slots int, holder string, ttl time.Duration) (*lockstore.Claim, error) {
+func (s *Store) Claim(ctx context.Context, pool string, slotNames []string, holder string, ttl time.Duration) (*lockstore.Claim, error) {
 	var result *lockstore.Claim
 
 	err := s.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		now := time.Now()
 
-		// Read all slot documents
-		for i := 0; i < slots; i++ {
-			ref := s.docRef(pool, i)
+		for _, name := range slotNames {
+			ref := s.docRef(pool, name)
 			doc, err := tx.Get(ref)
 
 			isFree := false
@@ -61,14 +60,13 @@ func (s *Store) Claim(ctx context.Context, pool string, slots int, holder string
 				if status.Code(err) == codes.NotFound {
 					isFree = true
 				} else {
-					return fmt.Errorf("failed to read slot %d: %w", i, err)
+					return fmt.Errorf("failed to read slot %q: %w", name, err)
 				}
 			} else {
 				var sd slotDoc
 				if err := doc.DataTo(&sd); err != nil {
-					return fmt.Errorf("failed to parse slot %d: %w", i, err)
+					return fmt.Errorf("failed to parse slot %q: %w", name, err)
 				}
-				// Slot is free if lease_id is empty or lease has expired
 				if sd.LeaseID == "" || now.After(sd.ExpiresAt) {
 					isFree = true
 				}
@@ -77,7 +75,7 @@ func (s *Store) Claim(ctx context.Context, pool string, slots int, holder string
 			if isFree {
 				claim := &lockstore.Claim{
 					Pool:      pool,
-					SlotIndex: i,
+					SlotName:  name,
 					LeaseID:   uuid.New().String(),
 					Holder:    holder,
 					ClaimedAt: now,
@@ -86,7 +84,7 @@ func (s *Store) Claim(ctx context.Context, pool string, slots int, holder string
 
 				sd := slotDoc{
 					Pool:      claim.Pool,
-					SlotIndex: claim.SlotIndex,
+					SlotName:  claim.SlotName,
 					LeaseID:   claim.LeaseID,
 					Holder:    claim.Holder,
 					ClaimedAt: claim.ClaimedAt,
@@ -94,7 +92,7 @@ func (s *Store) Claim(ctx context.Context, pool string, slots int, holder string
 				}
 
 				if err := tx.Set(ref, sd); err != nil {
-					return fmt.Errorf("failed to write slot %d: %w", i, err)
+					return fmt.Errorf("failed to write slot %q: %w", name, err)
 				}
 
 				result = claim
@@ -113,7 +111,6 @@ func (s *Store) Claim(ctx context.Context, pool string, slots int, holder string
 
 func (s *Store) Release(ctx context.Context, pool string, leaseID string) error {
 	return s.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// Find the slot with this lease
 		iter := tx.Documents(s.client.Collection(s.collection).Where("pool", "==", pool).Where("lease_id", "==", leaseID))
 		docs, err := iter.GetAll()
 		if err != nil {
@@ -124,7 +121,6 @@ func (s *Store) Release(ctx context.Context, pool string, leaseID string) error 
 			return lockstore.ErrLeaseNotFound
 		}
 
-		// Clear the claim by setting lease_id to empty
 		return tx.Update(docs[0].Ref, []firestore.Update{
 			{Path: "lease_id", Value: ""},
 			{Path: "holder", Value: ""},
@@ -166,7 +162,7 @@ func (s *Store) Renew(ctx context.Context, pool string, leaseID string, ttl time
 
 		result = &lockstore.Claim{
 			Pool:      sd.Pool,
-			SlotIndex: sd.SlotIndex,
+			SlotName:  sd.SlotName,
 			LeaseID:   sd.LeaseID,
 			Holder:    sd.Holder,
 			ClaimedAt: sd.ClaimedAt,
@@ -181,31 +177,31 @@ func (s *Store) Renew(ctx context.Context, pool string, leaseID string, ttl time
 	return result, nil
 }
 
-func (s *Store) Status(ctx context.Context, pool string, slots int) ([]lockstore.SlotStatus, error) {
+func (s *Store) Status(ctx context.Context, pool string, slotNames []string) ([]lockstore.SlotStatus, error) {
 	now := time.Now()
-	statuses := make([]lockstore.SlotStatus, slots)
+	statuses := make([]lockstore.SlotStatus, len(slotNames))
 
-	for i := 0; i < slots; i++ {
-		statuses[i] = lockstore.SlotStatus{SlotIndex: i}
+	for i, name := range slotNames {
+		statuses[i] = lockstore.SlotStatus{SlotName: name}
 
-		doc, err := s.docRef(pool, i).Get(ctx)
+		doc, err := s.docRef(pool, name).Get(ctx)
 		if err != nil {
 			if status.Code(err) == codes.NotFound {
 				continue
 			}
-			return nil, fmt.Errorf("failed to read slot %d: %w", i, err)
+			return nil, fmt.Errorf("failed to read slot %q: %w", name, err)
 		}
 
 		var sd slotDoc
 		if err := doc.DataTo(&sd); err != nil {
-			return nil, fmt.Errorf("failed to parse slot %d: %w", i, err)
+			return nil, fmt.Errorf("failed to parse slot %q: %w", name, err)
 		}
 
 		if sd.LeaseID != "" && now.Before(sd.ExpiresAt) {
 			statuses[i].Claimed = true
 			statuses[i].Claim = &lockstore.Claim{
 				Pool:      sd.Pool,
-				SlotIndex: sd.SlotIndex,
+				SlotName:  sd.SlotName,
 				LeaseID:   sd.LeaseID,
 				Holder:    sd.Holder,
 				ClaimedAt: sd.ClaimedAt,
@@ -241,7 +237,7 @@ func (s *Store) ValidateLease(ctx context.Context, pool string, leaseID string) 
 
 	return &lockstore.Claim{
 		Pool:      sd.Pool,
-		SlotIndex: sd.SlotIndex,
+		SlotName:  sd.SlotName,
 		LeaseID:   sd.LeaseID,
 		Holder:    sd.Holder,
 		ClaimedAt: sd.ClaimedAt,

@@ -19,9 +19,11 @@ func testEngine() (*engine.Engine, *lockmem.Store, *secretmem.Store) {
 	cfg := &config.Config{
 		Pools: map[string]config.PoolConfig{
 			"testpool": {
-				Slots:        2,
-				TTL:          1 * time.Hour,
-				SecretPrefix: "test-slot-",
+				Slots: []config.SlotConfig{
+					{Name: "alpha", Secret: "test-alpha"},
+					{Name: "beta", Secret: "test-beta"},
+				},
+				TTL: 1 * time.Hour,
 			},
 		},
 	}
@@ -49,11 +51,11 @@ func TestClaim(t *testing.T) {
 	if lf.Pool != "testpool" {
 		t.Errorf("expected pool 'testpool', got %q", lf.Pool)
 	}
-	if lf.SlotIndex != 0 {
-		t.Errorf("expected slot 0, got %d", lf.SlotIndex)
+	if lf.SlotName != "alpha" {
+		t.Errorf("expected slot 'alpha', got %q", lf.SlotName)
 	}
-	if lf.SecretName != "test-slot-0" {
-		t.Errorf("expected secret name 'test-slot-0', got %q", lf.SecretName)
+	if lf.SecretName != "test-alpha" {
+		t.Errorf("expected secret name 'test-alpha', got %q", lf.SecretName)
 	}
 	if lf.Holder != "test-holder" {
 		t.Errorf("expected holder 'test-holder', got %q", lf.Holder)
@@ -113,8 +115,8 @@ func TestRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-Claim failed: %v", err)
 	}
-	if lf2.SlotIndex != 0 {
-		t.Errorf("expected slot 0 to be reclaimed, got %d", lf2.SlotIndex)
+	if lf2.SlotName != "alpha" {
+		t.Errorf("expected slot 'alpha' to be reclaimed, got %q", lf2.SlotName)
 	}
 }
 
@@ -123,7 +125,7 @@ func TestReadWriteKey(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed the secret store
-	ss.Seed("test-slot-0", map[string]string{
+	ss.Seed("test-alpha", map[string]string{
 		"SHOPIFY_API_KEY": "test-key-123",
 	})
 
@@ -161,7 +163,7 @@ func TestReadAll(t *testing.T) {
 	e, _, ss := testEngine()
 	ctx := context.Background()
 
-	ss.Seed("test-slot-0", map[string]string{
+	ss.Seed("test-alpha", map[string]string{
 		"KEY_A": "val_a",
 		"KEY_B": "val_b",
 	})
@@ -223,6 +225,9 @@ func TestStatus(t *testing.T) {
 	if statuses[0].Claimed || statuses[1].Claimed {
 		t.Error("expected both slots to be free")
 	}
+	if statuses[0].SlotName != "alpha" {
+		t.Errorf("expected slot name 'alpha', got %q", statuses[0].SlotName)
+	}
 
 	// After one claim
 	_, err = e.Claim(ctx, "testpool")
@@ -235,9 +240,9 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("Status after claim failed: %v", err)
 	}
 	if !statuses[0].Claimed {
-		t.Error("expected slot 0 to be claimed")
+		t.Error("expected slot 'alpha' to be claimed")
 	}
 	if statuses[1].Claimed {
-		t.Error("expected slot 1 to be free")
+		t.Error("expected slot 'beta' to be free")
 	}
 }

@@ -26,7 +26,7 @@ var releaseCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Released slot %d from pool %q\n", lf.SlotIndex, lf.Pool)
+		fmt.Fprintf(os.Stderr, "Released slot %q from pool %q\n", lf.SlotName, lf.Pool)
 		return nil
 	},
 }

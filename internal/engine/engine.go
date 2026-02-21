@@ -26,10 +26,6 @@ func (e *Engine) poolConfig(poolName string) (*config.PoolConfig, error) {
 	return &pool, nil
 }
 
-func (e *Engine) secretName(pool *config.PoolConfig, slotIndex int) string {
-	return fmt.Sprintf("%s%d", pool.SecretPrefix, slotIndex)
-}
-
 // Claim acquires a free slot in the named pool and returns a LeaseFile.
 func (e *Engine) Claim(ctx context.Context, poolName string) (*lease.LeaseFile, error) {
 	pool, err := e.poolConfig(poolName)
@@ -37,16 +33,18 @@ func (e *Engine) Claim(ctx context.Context, poolName string) (*lease.LeaseFile, 
 		return nil, err
 	}
 
-	claim, err := e.LockStore.Claim(ctx, poolName, pool.Slots, e.Identity, pool.TTL)
+	claim, err := e.LockStore.Claim(ctx, poolName, pool.SlotNames(), e.Identity, pool.TTL)
 	if err != nil {
 		return nil, err
 	}
 
+	secretName, _ := pool.SecretForSlot(claim.SlotName)
+
 	return &lease.LeaseFile{
 		Pool:       claim.Pool,
-		SlotIndex:  claim.SlotIndex,
+		SlotName:   claim.SlotName,
 		LeaseID:    claim.LeaseID,
-		SecretName: e.secretName(pool, claim.SlotIndex),
+		SecretName: secretName,
 		Holder:     claim.Holder,
 		ClaimedAt:  claim.ClaimedAt,
 		ExpiresAt:  claim.ExpiresAt,
@@ -103,7 +101,7 @@ func (e *Engine) Renew(ctx context.Context, lf *lease.LeaseFile) (*lease.LeaseFi
 
 	return &lease.LeaseFile{
 		Pool:       claim.Pool,
-		SlotIndex:  claim.SlotIndex,
+		SlotName:   claim.SlotName,
 		LeaseID:    claim.LeaseID,
 		SecretName: lf.SecretName,
 		Holder:     claim.Holder,
@@ -119,7 +117,7 @@ func (e *Engine) Status(ctx context.Context, poolName string) ([]lockstore.SlotS
 		return nil, err
 	}
 
-	return e.LockStore.Status(ctx, poolName, pool.Slots)
+	return e.LockStore.Status(ctx, poolName, pool.SlotNames())
 }
 
 // Close releases resources held by both stores.

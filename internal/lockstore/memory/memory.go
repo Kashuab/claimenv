@@ -13,7 +13,7 @@ import (
 // Store is a thread-safe in-memory lock store for testing and local development.
 type Store struct {
 	mu    sync.Mutex
-	slots map[string]*lockstore.Claim // key: "{pool}-slot-{index}"
+	slots map[string]*lockstore.Claim // key: "{pool}-{slotName}"
 }
 
 func New() *Store {
@@ -22,25 +22,25 @@ func New() *Store {
 	}
 }
 
-func slotKey(pool string, index int) string {
-	return fmt.Sprintf("%s-slot-%d", pool, index)
+func slotKey(pool string, slotName string) string {
+	return fmt.Sprintf("%s-%s", pool, slotName)
 }
 
-func (s *Store) Claim(_ context.Context, pool string, slots int, holder string, ttl time.Duration) (*lockstore.Claim, error) {
+func (s *Store) Claim(_ context.Context, pool string, slotNames []string, holder string, ttl time.Duration) (*lockstore.Claim, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
 
-	for i := 0; i < slots; i++ {
-		key := slotKey(pool, i)
+	for _, name := range slotNames {
+		key := slotKey(pool, name)
 		existing := s.slots[key]
 
 		// Slot is free if it doesn't exist or has expired
 		if existing == nil || now.After(existing.ExpiresAt) {
 			claim := &lockstore.Claim{
 				Pool:      pool,
-				SlotIndex: i,
+				SlotName:  name,
 				LeaseID:   uuid.New().String(),
 				Holder:    holder,
 				ClaimedAt: now,
@@ -87,16 +87,16 @@ func (s *Store) Renew(_ context.Context, pool string, leaseID string, ttl time.D
 	return nil, lockstore.ErrLeaseNotFound
 }
 
-func (s *Store) Status(_ context.Context, pool string, slots int) ([]lockstore.SlotStatus, error) {
+func (s *Store) Status(_ context.Context, pool string, slotNames []string) ([]lockstore.SlotStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	statuses := make([]lockstore.SlotStatus, slots)
+	statuses := make([]lockstore.SlotStatus, len(slotNames))
 
-	for i := 0; i < slots; i++ {
-		key := slotKey(pool, i)
-		statuses[i] = lockstore.SlotStatus{SlotIndex: i}
+	for i, name := range slotNames {
+		key := slotKey(pool, name)
+		statuses[i] = lockstore.SlotStatus{SlotName: name}
 
 		if claim, ok := s.slots[key]; ok && now.Before(claim.ExpiresAt) {
 			statuses[i].Claimed = true

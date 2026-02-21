@@ -10,10 +10,10 @@ You have a team working on a Shopify app with branch preview environments. Each 
 
 ```
 Pool "onboard"
-  slot-0  { SHOPIFY_API_KEY=aaa, SHOPIFY_API_SECRET=bbb }  <- claimed by MR !423
-  slot-1  { SHOPIFY_API_KEY=ccc, SHOPIFY_API_SECRET=ddd }  <- free
-  slot-2  { SHOPIFY_API_KEY=eee, SHOPIFY_API_SECRET=fff }  <- claimed by MR !518
-  slot-3  { ... }                                           <- free
+  app-alpha  { SHOPIFY_API_KEY=aaa, SHOPIFY_API_SECRET=bbb }  <- claimed by MR !423
+  app-beta   { SHOPIFY_API_KEY=ccc, SHOPIFY_API_SECRET=ddd }  <- free
+  app-gamma  { SHOPIFY_API_KEY=eee, SHOPIFY_API_SECRET=fff }  <- claimed by MR !518
+  app-delta  { ... }                                           <- free
 ```
 
 `claimenv` atomically claims a free slot, gives you access to its credentials, and releases it when you're done. Leases have a TTL so crashed/cancelled jobs don't hold slots forever.
@@ -73,10 +73,19 @@ backend:
 
 pools:
   onboard:
-    slots: 4
     ttl: 4h
-    secret_prefix: "onboard-slot-"
+    slots:
+      - name: app-alpha
+        secret: onboard-app-alpha
+      - name: app-beta
+        secret: onboard-app-beta
+      - name: app-gamma
+        secret: onboard-app-gamma
+      - name: app-delta
+        secret: onboard-app-delta
 ```
+
+Each slot has a `name` (shown in status output and logs) and a `secret` (the GCP Secret Manager secret name holding that slot's credentials as a JSON object).
 
 Config file lookup order:
 1. `CLAIMENV_CONFIG` env var
@@ -109,16 +118,15 @@ Config file lookup order:
 
 ### Provisioning the Pool
 
-For each slot in your pool, create a secret in GCP Secret Manager:
+Secrets are auto-created by `claimenv write` if they don't exist. You can also pre-provision them:
 
 ```bash
-# Create 4 secrets for the "onboard" pool
-for i in 0 1 2 3; do
-  gcloud secrets create "onboard-slot-${i}" --project=my-gcp-project
+# Pre-create secrets with initial credentials
+for name in app-alpha app-beta app-gamma app-delta; do
+  gcloud secrets create "onboard-${name}" --project=my-gcp-project
 
-  # Set the initial credential values as a JSON payload
-  echo '{"SHOPIFY_API_KEY":"key-'${i}'","SHOPIFY_API_SECRET":"secret-'${i}'"}' | \
-    gcloud secrets versions add "onboard-slot-${i}" --data-file=- --project=my-gcp-project
+  echo '{"SHOPIFY_API_KEY":"key-'${name}'","SHOPIFY_API_SECRET":"secret-'${name}'"}' | \
+    gcloud secrets versions add "onboard-${name}" --data-file=- --project=my-gcp-project
 done
 ```
 

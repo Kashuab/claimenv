@@ -24,8 +24,8 @@ var claimCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Claimed slot %d from pool %q (lease: %s, expires: %s)\n",
-			lf.SlotIndex, lf.Pool, lf.LeaseID, lf.ExpiresAt.Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(os.Stderr, "Claimed slot %q from pool %q (lease: %s, expires: %s)\n",
+			lf.SlotName, lf.Pool, lf.LeaseID, lf.ExpiresAt.Format("2006-01-02 15:04:05"))
 		return nil
 	},
 }

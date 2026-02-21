@@ -27,10 +27,12 @@ internal/
 ## Architecture
 
 Two pluggable backend interfaces:
-- **LockStore** (`internal/lockstore/lockstore.go`): manages exclusive leases on pool slots
+- **LockStore** (`internal/lockstore/lockstore.go`): manages exclusive leases on named pool slots
 - **SecretStore** (`internal/secretstore/secretstore.go`): reads/writes credential key-value pairs
 
 The **Engine** (`internal/engine/engine.go`) orchestrates both stores. CLI commands are thin wrappers that delegate to the engine.
+
+Slots are named (not numbered). Each slot maps to a GCP Secret Manager secret via config. The GCP SM backend auto-creates secrets on first write if they don't exist.
 
 ## Build & Test
 

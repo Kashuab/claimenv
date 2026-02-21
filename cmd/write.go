@@ -24,7 +24,7 @@ var writeCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Wrote %s to slot %d in pool %q\n", key, lf.SlotIndex, lf.Pool)
+		fmt.Fprintf(os.Stderr, "Wrote %s to slot %q in pool %q\n", key, lf.SlotName, lf.Pool)
 		return nil
 	},
 }

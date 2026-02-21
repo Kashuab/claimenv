@@ -9,7 +9,7 @@ import (
 
 type LeaseFile struct {
 	Pool       string    `json:"pool"`
-	SlotIndex  int       `json:"slot_index"`
+	SlotName   string    `json:"slot_name"`
 	LeaseID    string    `json:"lease_id"`
 	SecretName string    `json:"secret_name"`
 	Holder     string    `json:"holder"`

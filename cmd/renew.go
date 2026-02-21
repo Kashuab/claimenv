@@ -27,8 +27,8 @@ var renewCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Renewed lease for slot %d in pool %q (new expiry: %s)\n",
-			renewed.SlotIndex, renewed.Pool, renewed.ExpiresAt.Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(os.Stderr, "Renewed lease for slot %q in pool %q (new expiry: %s)\n",
+			renewed.SlotName, renewed.Pool, renewed.ExpiresAt.Format("2006-01-02 15:04:05"))
 		return nil
 	},
 }
