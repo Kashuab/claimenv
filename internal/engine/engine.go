@@ -58,6 +58,16 @@ func (e *Engine) Release(ctx context.Context, lf *lease.LeaseFile) error {
 	return e.LockStore.Release(ctx, lf.Pool, lf.LeaseID)
 }
 
+// ReleaseByHolder releases the slot held by this engine's identity in the named pool.
+// This does not require a lease file.
+func (e *Engine) ReleaseByHolder(ctx context.Context, poolName string) error {
+	if _, err := e.poolConfig(poolName); err != nil {
+		return err
+	}
+
+	return e.LockStore.ReleaseByHolder(ctx, poolName, e.Identity)
+}
+
 // ReadKey reads a single env var value from the claimed slot.
 func (e *Engine) ReadKey(ctx context.Context, lf *lease.LeaseFile, key string) (string, error) {
 	secretName, ok := lf.Secrets[key]

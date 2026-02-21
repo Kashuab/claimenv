@@ -50,6 +50,36 @@ func (s *Store) Claim(ctx context.Context, pool string, slotNames []string, hold
 	err := s.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		now := time.Now()
 
+		// First pass: check if this holder already has an active claim
+		for _, name := range slotNames {
+			ref := s.docRef(pool, name)
+			doc, err := tx.Get(ref)
+			if err != nil {
+				if status.Code(err) != codes.NotFound {
+					return fmt.Errorf("failed to read slot %q: %w", name, err)
+				}
+				continue
+			}
+
+			var sd slotDoc
+			if err := doc.DataTo(&sd); err != nil {
+				return fmt.Errorf("failed to parse slot %q: %w", name, err)
+			}
+
+			if sd.Holder == holder && now.Before(sd.ExpiresAt) {
+				result = &lockstore.Claim{
+					Pool:      sd.Pool,
+					SlotName:  sd.SlotName,
+					LeaseID:   sd.LeaseID,
+					Holder:    sd.Holder,
+					ClaimedAt: sd.ClaimedAt,
+					ExpiresAt: sd.ExpiresAt,
+				}
+				return nil
+			}
+		}
+
+		// Second pass: find a free slot
 		for _, name := range slotNames {
 			ref := s.docRef(pool, name)
 			doc, err := tx.Get(ref)
@@ -125,6 +155,34 @@ func (s *Store) Release(ctx context.Context, pool string, leaseID string) error 
 			{Path: "lease_id", Value: ""},
 			{Path: "holder", Value: ""},
 		})
+	})
+}
+
+func (s *Store) ReleaseByHolder(ctx context.Context, pool string, holder string) error {
+	return s.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		now := time.Now()
+
+		iter := tx.Documents(s.client.Collection(s.collection).Where("pool", "==", pool).Where("holder", "==", holder))
+		docs, err := iter.GetAll()
+		if err != nil {
+			return fmt.Errorf("failed to query for holder: %w", err)
+		}
+
+		for _, doc := range docs {
+			var sd slotDoc
+			if err := doc.DataTo(&sd); err != nil {
+				return fmt.Errorf("failed to parse slot: %w", err)
+			}
+
+			if now.Before(sd.ExpiresAt) {
+				return tx.Update(doc.Ref, []firestore.Update{
+					{Path: "lease_id", Value: ""},
+					{Path: "holder", Value: ""},
+				})
+			}
+		}
+
+		return lockstore.ErrLeaseNotFound
 	})
 }
 

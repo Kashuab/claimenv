@@ -69,21 +69,48 @@ func TestClaim(t *testing.T) {
 	}
 }
 
+func TestClaimIdempotent(t *testing.T) {
+	e, _, _ := testEngine()
+	ctx := context.Background()
+
+	lf1, err := e.Claim(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("first claim failed: %v", err)
+	}
+
+	// Same holder claiming again should return the same slot
+	lf2, err := e.Claim(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("second claim (same holder) failed: %v", err)
+	}
+
+	if lf2.SlotName != lf1.SlotName {
+		t.Errorf("expected same slot %q, got %q", lf1.SlotName, lf2.SlotName)
+	}
+	if lf2.LeaseID != lf1.LeaseID {
+		t.Errorf("expected same lease ID %q, got %q", lf1.LeaseID, lf2.LeaseID)
+	}
+}
+
 func TestClaimExhaustsPool(t *testing.T) {
 	e, _, _ := testEngine()
 	ctx := context.Background()
 
-	// Claim both slots
+	// Claim both slots with different holders
+	e.Identity = "holder-1"
 	_, err := e.Claim(ctx, "testpool")
 	if err != nil {
 		t.Fatalf("first claim failed: %v", err)
 	}
+
+	e.Identity = "holder-2"
 	_, err = e.Claim(ctx, "testpool")
 	if err != nil {
 		t.Fatalf("second claim failed: %v", err)
 	}
 
-	// Third claim should fail
+	// Third claim with a new holder should fail
+	e.Identity = "holder-3"
 	_, err = e.Claim(ctx, "testpool")
 	if err != lockstore.ErrPoolExhausted {
 		t.Errorf("expected ErrPoolExhausted, got %v", err)
@@ -121,6 +148,41 @@ func TestRelease(t *testing.T) {
 	}
 	if lf2.SlotName != "alpha" {
 		t.Errorf("expected slot 'alpha' to be reclaimed, got %q", lf2.SlotName)
+	}
+}
+
+func TestReleaseByHolder(t *testing.T) {
+	e, _, _ := testEngine()
+	ctx := context.Background()
+
+	_, err := e.Claim(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("Claim failed: %v", err)
+	}
+
+	// Release by holder identity (no lease file)
+	err = e.ReleaseByHolder(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("ReleaseByHolder failed: %v", err)
+	}
+
+	// Should be able to claim again
+	lf, err := e.Claim(ctx, "testpool")
+	if err != nil {
+		t.Fatalf("re-Claim failed: %v", err)
+	}
+	if lf.SlotName != "alpha" {
+		t.Errorf("expected slot 'alpha' to be reclaimed, got %q", lf.SlotName)
+	}
+}
+
+func TestReleaseByHolderNotFound(t *testing.T) {
+	e, _, _ := testEngine()
+	ctx := context.Background()
+
+	err := e.ReleaseByHolder(ctx, "testpool")
+	if err == nil {
+		t.Error("expected error when no claim exists for holder")
 	}
 }
 

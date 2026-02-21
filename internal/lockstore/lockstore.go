@@ -40,6 +40,10 @@ type LockStore interface {
 	// Returns ErrLeaseNotFound if the lease does not exist.
 	Release(ctx context.Context, pool string, leaseID string) error
 
+	// ReleaseByHolder releases the claim held by the given holder in the pool.
+	// Returns ErrLeaseNotFound if no active claim is found for the holder.
+	ReleaseByHolder(ctx context.Context, pool string, holder string) error
+
 	// Renew extends the TTL of an existing claim.
 	// Returns ErrLeaseNotFound or ErrLeaseExpired as appropriate.
 	Renew(ctx context.Context, pool string, leaseID string, ttl time.Duration) (*Claim, error)

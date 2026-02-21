@@ -32,11 +32,20 @@ func (s *Store) Claim(_ context.Context, pool string, slotNames []string, holder
 
 	now := time.Now()
 
+	// Check if this holder already has an active claim in the pool
+	for _, name := range slotNames {
+		key := slotKey(pool, name)
+		existing := s.slots[key]
+		if existing != nil && existing.Holder == holder && now.Before(existing.ExpiresAt) {
+			return existing, nil
+		}
+	}
+
+	// Otherwise find a free slot
 	for _, name := range slotNames {
 		key := slotKey(pool, name)
 		existing := s.slots[key]
 
-		// Slot is free if it doesn't exist or has expired
 		if existing == nil || now.After(existing.ExpiresAt) {
 			claim := &lockstore.Claim{
 				Pool:      pool,
@@ -60,6 +69,22 @@ func (s *Store) Release(_ context.Context, pool string, leaseID string) error {
 
 	for key, claim := range s.slots {
 		if claim.Pool == pool && claim.LeaseID == leaseID {
+			delete(s.slots, key)
+			return nil
+		}
+	}
+
+	return lockstore.ErrLeaseNotFound
+}
+
+func (s *Store) ReleaseByHolder(_ context.Context, pool string, holder string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+
+	for key, claim := range s.slots {
+		if claim.Pool == pool && claim.Holder == holder && now.Before(claim.ExpiresAt) {
 			delete(s.slots, key)
 			return nil
 		}
